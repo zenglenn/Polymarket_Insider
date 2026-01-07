@@ -28,7 +28,7 @@ def main() -> None:
     print("top_flow_wallets:")
     for wallet in wallets:
         print(
-            f"- {wallet.get('address')} delta={_fmt(wallet.get('total_usd_delta'), 2)} "
+            f"- {wallet.get('tier')} {wallet.get('address')} delta={_fmt(wallet.get('total_usd_delta'), 2)} "
             f"new_clusters={wallet.get('new_clusters_entered_count')}"
         )
     print("top_flow_markets:")

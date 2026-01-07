@@ -49,6 +49,8 @@ def compute_flow(conn, run_date: str, config) -> dict[str, Any]:
             "markets_flow": [],
         }
 
+    recent_runs = _recent_run_dates(conn, run_date, config.flow.lookback_runs)
+    runs_seen = _runs_seen_map(conn, recent_runs)
     wallet_today = _wallet_metrics_by_address(conn, run_date)
     wallet_prev = _wallet_metrics_by_address(conn, prior_run_date)
     cluster_today = _cluster_totals(conn, run_date)
@@ -72,6 +74,7 @@ def compute_flow(conn, run_date: str, config) -> dict[str, Any]:
             cluster_prev.get(address, {}),
         )
 
+        runs_seen_count = runs_seen.get(address, 0)
         flow_row = {
             "address": address,
             "total_usd_today": total_today,
@@ -88,12 +91,14 @@ def compute_flow(conn, run_date: str, config) -> dict[str, Any]:
             "top_cluster_delta": top_cluster_delta,
             "top_cluster_delta_usd": top_cluster_delta_usd,
             "new_clusters_entered_count": new_clusters_entered,
+            "runs_seen": runs_seen_count,
         }
 
         if not _flow_wallet_passes(flow_row, config.flow):
             continue
 
         flow_row["score_flow"] = _flow_score(flow_row, config.flow)
+        flow_row["tier"] = _flow_tier(flow_row)
         wallets_flow.append(flow_row)
 
     wallets_flow = stable_sorted(
@@ -136,6 +141,30 @@ def _prior_run_date(conn, run_date: str) -> str | None:
         (run_date,),
     ).fetchone()
     return row["run_date"] if row else None
+
+
+def _recent_run_dates(conn, run_date: str, lookback_runs: int) -> list[str]:
+    rows = conn.execute(
+        "SELECT run_date FROM runs WHERE run_date <= ? ORDER BY run_date DESC LIMIT ?",
+        (run_date, lookback_runs),
+    ).fetchall()
+    return [row["run_date"] for row in rows]
+
+
+def _runs_seen_map(conn, run_dates: list[str]) -> dict[str, int]:
+    if not run_dates:
+        return {}
+    placeholders = ",".join("?" for _ in run_dates)
+    rows = conn.execute(
+        f"""
+        SELECT address, COUNT(DISTINCT run_date) AS runs_seen
+        FROM wallet_market_daily
+        WHERE run_date IN ({placeholders})
+        GROUP BY address
+        """,
+        run_dates,
+    ).fetchall()
+    return {row["address"]: row["runs_seen"] for row in rows}
 
 
 def _wallet_metrics_by_address(conn, run_date: str) -> dict[str, dict[str, Any]]:
@@ -202,11 +231,14 @@ def _flow_wallet_passes(metric: dict[str, Any], flow) -> bool:
     total_today = metric.get("total_usd_today") or 0.0
     total_delta = metric.get("total_usd_delta") or 0.0
     top_cluster_share = metric.get("top_cluster_share_today")
+    runs_seen = metric.get("runs_seen") or 0
     if total_today < flow.min_total_usd_today:
         return False
     if total_delta < flow.min_total_delta_usd:
         return False
     if top_cluster_share is None or top_cluster_share > flow.max_top_cluster_share_today:
+        return False
+    if runs_seen < flow.min_runs_seen and total_today < flow.override_total_usd_today_for_new_wallet:
         return False
     return True
 
@@ -228,6 +260,19 @@ def _flow_score(metric: dict[str, Any], flow) -> float:
         + cluster_bonus
         - flow.weights.w_concentration_penalty * concentration_penalty
     )
+
+
+def _flow_tier(metric: dict[str, Any]) -> str:
+    total_delta = metric.get("total_usd_delta") or 0.0
+    new_clusters = metric.get("new_clusters_entered_count") or 0
+    top_cluster_share = metric.get("top_cluster_share_today")
+    if top_cluster_share is None:
+        return "TIER_C"
+    if total_delta >= 20000 and new_clusters >= 3 and top_cluster_share <= 0.45:
+        return "TIER_A"
+    if total_delta >= 10000 and new_clusters >= 2 and top_cluster_share <= 0.50:
+        return "TIER_B"
+    return "TIER_C"
 
 
 def _positions_flow(

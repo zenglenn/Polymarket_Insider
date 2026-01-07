@@ -31,6 +31,7 @@ Quick local inspection:
 ```bash
 python3 -m polymarket_insider.tools.inspect_latest
 python3 -m polymarket_insider.tools.inspect_flow
+python3 -m polymarket_insider.tools.daily_quickview
 ```
 
 ## Clusters and Diversification

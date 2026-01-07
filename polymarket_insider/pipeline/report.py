@@ -195,6 +195,7 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
 
     wallets_flow_headers = [
         "address",
+        "tier",
         "score_flow",
         "total_usd_today",
         "total_usd_prev",
@@ -360,10 +361,35 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
             handle.write(f"- prior_run_date: {prior_run}\n\n")
             top_flow_wallets = flow_results.get("wallets_flow", [])[:15]
             top_flow_markets = flow_results.get("markets_flow", [])[:15]
+            top_flow_shortlist = [
+                wallet
+                for wallet in flow_results.get("wallets_flow", [])
+                if wallet.get("tier") in {"TIER_A", "TIER_B"}
+            ][:5]
+            new_positions = [
+                row for row in flow_results.get("positions_flow", []) if row.get("classification") == "NEW_POSITION"
+            ]
+            new_positions = stable_sorted(
+                new_positions,
+                key=lambda item: item.get("delta_usd", 0.0),
+                reverse=True,
+                tie_breaker=lambda item: (item.get("address"), item.get("market_id"), item.get("outcome")),
+            )[:10]
             handle.write(
                 "Flow wallets are signal candidates whose total exposure increased and stayed diversified across "
                 "clusters. Position flow highlights new or increasing positions above thresholds.\n\n"
             )
+            handle.write("Today's Flow Shortlist:\n")
+            if top_flow_shortlist:
+                for wallet in top_flow_shortlist:
+                    handle.write(
+                        f"- {wallet.get('tier')}: {wallet.get('address')} "
+                        f"(delta {_fmt(wallet.get('total_usd_delta'), 2)}, "
+                        f"top_cluster_delta {_fmt(wallet.get('top_cluster_delta_usd'), 2)})\n"
+                    )
+            else:
+                handle.write("- none\n")
+            handle.write("\n")
             if top_flow_wallets:
                 handle.write(
                     "| Rank | Address | Score | Total USD Delta | New Clusters | Top Cluster Delta USD |\n"
@@ -377,6 +403,18 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
                     )
             else:
                 handle.write("No flow wallets met the thresholds.\n")
+            handle.write("\n")
+            handle.write("Top NEW positions (by delta):\n")
+            if new_positions:
+                handle.write("| Rank | Address | Market | Delta USD | Outcome |\n")
+                handle.write("| --- | --- | --- | --- | --- |\n")
+                for idx, position in enumerate(new_positions, start=1):
+                    handle.write(
+                        f"| {idx} | {position.get('address')} | {position.get('question')} "
+                        f"| {_fmt(position.get('delta_usd'), 2)} | {position.get('outcome')} |\n"
+                    )
+            else:
+                handle.write("- none\n")
             handle.write("\n")
             if top_flow_markets:
                 handle.write("| Rank | Market | Total Delta USD | Wallets Increasing | Wallets New |\n")

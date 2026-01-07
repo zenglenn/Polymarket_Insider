@@ -75,11 +75,14 @@ class FlowWeights(BaseModel):
 
 
 class FlowConfig(BaseModel):
+    min_runs_seen: int = 2
+    lookback_runs: int = 5
+    override_total_usd_today_for_new_wallet: float = 25000
     min_total_usd_today: float = 5000
-    min_total_delta_usd: float = 2000
-    min_position_delta_usd: float = 1000
-    min_new_position_usd: float = 1500
-    max_top_cluster_share_today: float = 0.6
+    min_total_delta_usd: float = 5000
+    min_position_delta_usd: float = 2000
+    min_new_position_usd: float = 2500
+    max_top_cluster_share_today: float = 0.5
     top_wallets: int = 25
     top_positions_per_wallet: int = 10
     weights: FlowWeights = FlowWeights()

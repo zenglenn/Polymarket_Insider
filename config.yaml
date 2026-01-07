@@ -43,11 +43,14 @@ wallet_ranking:
 report:
   top_wallets: 15
 flow:
+  min_runs_seen: 2
+  lookback_runs: 5
+  override_total_usd_today_for_new_wallet: 25000
   min_total_usd_today: 5000
-  min_total_delta_usd: 2000
-  min_position_delta_usd: 1000
-  min_new_position_usd: 1500
-  max_top_cluster_share_today: 0.60
+  min_total_delta_usd: 5000
+  min_position_delta_usd: 2000
+  min_new_position_usd: 2500
+  max_top_cluster_share_today: 0.50
   top_wallets: 25
   top_positions_per_wallet: 10
   weights:
