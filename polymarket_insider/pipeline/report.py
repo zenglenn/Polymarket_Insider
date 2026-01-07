@@ -271,6 +271,7 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         "top_wallet",
         "top_wallet_delta",
         "top_wallet_share",
+        "fallback",
     ]
     with consensus_flow_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=consensus_flow_headers)
@@ -479,9 +480,18 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
 
         handle.write("## Consensus Flow\n\n")
         prior_run = consensus_results.get("prior_run_date") or "none"
+        diagnostics = consensus_results.get("diagnostics", {})
         handle.write(
             f"- prior_run_date: {prior_run}\n"
-            f"- lookback_days: {consensus_results.get('lookback_days')}\n\n"
+            f"- lookback_days: {consensus_results.get('lookback_days')}\n"
+            f"- candidate_flow_wallets_A_B: {diagnostics.get('candidate_flow_wallets_A_B', 0)}\n"
+            f"- candidate_position_deltas: {diagnostics.get('candidate_position_deltas', 0)}\n"
+            f"- unique_candidate_keys: {diagnostics.get('unique_candidate_keys', 0)}\n"
+            f"- keys_meeting_min_wallets: {diagnostics.get('keys_meeting_min_wallets', 0)}\n"
+            f"- keys_meeting_min_total_delta: {diagnostics.get('keys_meeting_min_total_delta', 0)}\n"
+            f"- keys_meeting_max_top_wallet_share: {diagnostics.get('keys_meeting_max_top_wallet_share', 0)}\n"
+            f"- final_consensus_rows: {diagnostics.get('final_consensus_rows', 0)}\n"
+            f"- fallback_used: {diagnostics.get('fallback_used', 0)}\n\n"
         )
         consensus_top = consensus_results.get("consensus_entries", [])[:10]
         handle.write(

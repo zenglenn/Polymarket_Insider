@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, Iterable
 
@@ -10,12 +11,17 @@ from polymarket_insider.scoring.weights import stable_sorted
 def compute_consensus(conn, run_date: str, config) -> dict[str, Any]:
     run_pairs = _run_pairs(conn, run_date, config.consensus.lookback_days)
     if not run_pairs:
+        diagnostics = _empty_diagnostics()
+        _log_diagnostics(diagnostics)
         return {
             "run_date": run_date,
             "prior_run_date": None,
             "lookback_days": config.consensus.lookback_days,
             "consensus_entries": [],
             "consensus_wallets": [],
+            "candidate_keys": [],
+            "diagnostics": diagnostics,
+            "fallback_used": 0,
         }
 
     position_rows: list[dict[str, Any]] = []
@@ -30,9 +36,10 @@ def compute_consensus(conn, run_date: str, config) -> dict[str, Any]:
         wallet_tiers.update(tiers_for_run)
         position_rows.extend(_position_deltas(conn, current_run, prev_run))
 
-    consensus_entries, consensus_wallets = compute_consensus_from_inputs(
-        position_rows, wallet_tiers, config.consensus
+    consensus_entries, consensus_wallets, diagnostics, candidate_keys, fallback_used = (
+        compute_consensus_with_fallback(position_rows, wallet_tiers, config.consensus)
     )
+    _log_diagnostics(diagnostics)
     prior_run_date = run_pairs[0][1]
     return {
         "run_date": run_date,
@@ -40,6 +47,9 @@ def compute_consensus(conn, run_date: str, config) -> dict[str, Any]:
         "lookback_days": config.consensus.lookback_days,
         "consensus_entries": consensus_entries,
         "consensus_wallets": consensus_wallets,
+        "candidate_keys": candidate_keys,
+        "diagnostics": diagnostics,
+        "fallback_used": fallback_used,
     }
 
 
@@ -47,9 +57,11 @@ def compute_consensus_from_inputs(
     position_rows: Iterable[dict[str, Any]],
     wallet_tiers: dict[str, str],
     consensus,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    apply_min_total_delta: bool = True,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int], list[dict[str, Any]]]:
     aggregated: dict[tuple[str, str], dict[str, Any]] = {}
     wallet_support: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+    candidate_deltas = 0
 
     for row in position_rows:
         classification = row.get("classification")
@@ -65,6 +77,7 @@ def compute_consensus_from_inputs(
         if consensus.require_tierA_or_B and tier not in {"TIER_A", "TIER_B"}:
             continue
 
+        candidate_deltas += 1
         market_id = row.get("market_id")
         outcome = row.get("outcome") or "Unknown"
         key = (market_id, outcome)
@@ -119,16 +132,33 @@ def compute_consensus_from_inputs(
             wallet_row["classification"] = "NEW_POSITION"
 
     entries: list[dict[str, Any]] = []
+    candidate_keys = _candidate_keys(aggregated, wallet_support)
+    keys_meeting_min_wallets = 0
+    keys_meeting_min_total_delta = 0
+    keys_meeting_max_top_wallet_share = 0
     for entry in aggregated.values():
         wallets_supporting = entry["wallets_supporting"]
         total_delta = entry["total_delta_usd"]
+        if len(wallets_supporting) >= consensus.min_wallets:
+            keys_meeting_min_wallets += 1
+
         if len(wallets_supporting) < consensus.min_wallets:
-            continue
-        if total_delta < consensus.min_total_delta_usd:
             continue
 
         top_wallet, top_delta = _top_wallet(wallet_support.get((entry["market_id"], entry["outcome"]), {}))
         top_share = (top_delta / total_delta) if total_delta > 0 else 0.0
+
+        if total_delta >= consensus.min_total_delta_usd:
+            keys_meeting_min_total_delta += 1
+
+        if total_delta >= consensus.min_total_delta_usd and top_share <= consensus.max_top_wallet_share:
+            keys_meeting_max_top_wallet_share += 1
+
+        if apply_min_total_delta and total_delta < consensus.min_total_delta_usd:
+            continue
+        if top_share > consensus.max_top_wallet_share:
+            continue
+
         entry["wallets_supporting"] = len(wallets_supporting)
         entry["wallets_new"] = len(entry["wallets_new"])
         entry["wallets_increasing"] = len(entry["wallets_increasing"])
@@ -161,7 +191,39 @@ def compute_consensus_from_inputs(
         )
         consensus_wallet_rows.extend(wallets)
 
-    return entries, consensus_wallet_rows
+    tier_ab_count = sum(1 for tier in wallet_tiers.values() if tier in {"TIER_A", "TIER_B"})
+    diagnostics = {
+        "candidate_flow_wallets_A_B": tier_ab_count,
+        "candidate_position_deltas": candidate_deltas,
+        "unique_candidate_keys": len(aggregated),
+        "keys_meeting_min_wallets": keys_meeting_min_wallets,
+        "keys_meeting_min_total_delta": keys_meeting_min_total_delta,
+        "keys_meeting_max_top_wallet_share": keys_meeting_max_top_wallet_share,
+        "final_consensus_rows": len(entries),
+    }
+    return entries, consensus_wallet_rows, diagnostics, candidate_keys
+
+
+def compute_consensus_with_fallback(
+    position_rows: Iterable[dict[str, Any]],
+    wallet_tiers: dict[str, str],
+    consensus,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int], list[dict[str, Any]], int]:
+    entries, wallets, diagnostics, candidate_keys = compute_consensus_from_inputs(
+        position_rows, wallet_tiers, consensus
+    )
+    fallback_used = 0
+    if not entries:
+        entries, wallets, fallback_diagnostics, candidate_keys = compute_consensus_from_inputs(
+            position_rows, wallet_tiers, consensus, apply_min_total_delta=False
+        )
+        if entries:
+            fallback_used = 1
+        diagnostics["final_consensus_rows"] = len(entries)
+    for row in entries:
+        row["fallback"] = fallback_used
+    diagnostics["fallback_used"] = fallback_used
+    return entries, wallets, diagnostics, candidate_keys, fallback_used
 
 
 def _run_pairs(conn, run_date: str, lookback_days: int) -> list[tuple[str, str]]:
@@ -280,4 +342,61 @@ def _score_consensus(entry: dict[str, Any], consensus) -> float:
         + wallets_new * consensus.weights.w_new
         + tiers_A * consensus.weights.w_tierA
         - concentration_penalty * consensus.weights.w_concentration_penalty
+    )
+
+
+def _candidate_keys(
+    aggregated: dict[tuple[str, str], dict[str, Any]],
+    wallet_support: dict[tuple[str, str], dict[str, dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key, entry in aggregated.items():
+        top_wallet, top_delta = _top_wallet(wallet_support.get(key, {}))
+        total_delta = entry["total_delta_usd"]
+        wallets_supporting = len(entry["wallets_supporting"])
+        rows.append(
+            {
+                "market_id": entry["market_id"],
+                "outcome": entry["outcome"],
+                "question": entry.get("question"),
+                "cluster_key": entry.get("cluster_key") or "unknown",
+                "wallets_supporting": wallets_supporting,
+                "total_delta_usd": total_delta,
+                "top_wallet_share": (top_delta / total_delta) if total_delta > 0 else 0.0,
+            }
+        )
+    return stable_sorted(
+        rows,
+        key=lambda item: (item.get("wallets_supporting", 0), item.get("total_delta_usd", 0.0)),
+        reverse=True,
+        tie_breaker=lambda item: (item.get("market_id"), item.get("outcome")),
+    )
+
+
+def _empty_diagnostics() -> dict[str, int]:
+    return {
+        "candidate_flow_wallets_A_B": 0,
+        "candidate_position_deltas": 0,
+        "unique_candidate_keys": 0,
+        "keys_meeting_min_wallets": 0,
+        "keys_meeting_min_total_delta": 0,
+        "keys_meeting_max_top_wallet_share": 0,
+        "final_consensus_rows": 0,
+        "fallback_used": 0,
+    }
+
+
+def _log_diagnostics(diagnostics: dict[str, int]) -> None:
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "Consensus diagnostics candidates=%s candidate_keys=%s wallets_AB=%s min_wallets=%s min_total_delta=%s "
+        "max_top_wallet_share=%s final=%s fallback_used=%s",
+        diagnostics.get("candidate_position_deltas", 0),
+        diagnostics.get("unique_candidate_keys", 0),
+        diagnostics.get("candidate_flow_wallets_A_B", 0),
+        diagnostics.get("keys_meeting_min_wallets", 0),
+        diagnostics.get("keys_meeting_min_total_delta", 0),
+        diagnostics.get("keys_meeting_max_top_wallet_share", 0),
+        diagnostics.get("final_consensus_rows", 0),
+        diagnostics.get("fallback_used", 0),
     )

@@ -71,12 +71,12 @@ weights:
     whale: 0.2
     new_wallet: 0.1
 consensus:
-  lookback_days: 1
+  lookback_days: 2
   min_wallets: 2
   require_tierA_or_B: true
-  min_position_delta_usd: 1500
-  min_total_delta_usd: 5000
-  max_top_wallet_share: 0.80
+  min_position_delta_usd: 1000
+  min_total_delta_usd: 3000
+  max_top_wallet_share: 0.85
   top_n: 25
   weights:
     w_total_delta: 1.0

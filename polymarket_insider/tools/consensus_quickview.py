@@ -24,6 +24,7 @@ def main() -> None:
     print(f"latest_run_date: {run_date}")
     print(f"prior_run_date: {results.get('prior_run_date') or 'none'}")
     consensus_entries = results.get("consensus_entries", [])[:10]
+    diagnostics = results.get("diagnostics", {})
     print("top_consensus_entries:")
     for row in consensus_entries:
         print(
@@ -31,6 +32,27 @@ def main() -> None:
             f"delta={_fmt(row.get('total_delta_usd'), 2)} "
             f"top_wallet_share={_fmt(row.get('top_wallet_share'), 2)}"
         )
+    if not consensus_entries:
+        print(
+            "diagnostics: candidates=%s keys=%s min_wallets=%s min_total_delta=%s max_top_wallet_share=%s "
+            "final=%s fallback_used=%s"
+            % (
+                diagnostics.get("candidate_position_deltas", 0),
+                diagnostics.get("unique_candidate_keys", 0),
+                diagnostics.get("keys_meeting_min_wallets", 0),
+                diagnostics.get("keys_meeting_min_total_delta", 0),
+                diagnostics.get("keys_meeting_max_top_wallet_share", 0),
+                diagnostics.get("final_consensus_rows", 0),
+                diagnostics.get("fallback_used", 0),
+            )
+        )
+        print("top_candidate_keys:")
+        for row in results.get("candidate_keys", [])[:10]:
+            print(
+                f"- {row.get('market_id')} {row.get('outcome')} wallets={row.get('wallets_supporting')} "
+                f"delta={_fmt(row.get('total_delta_usd'), 2)} "
+                f"top_wallet_share={_fmt(row.get('top_wallet_share'), 2)}"
+            )
 
     if consensus_entries:
         top_market = consensus_entries[0]

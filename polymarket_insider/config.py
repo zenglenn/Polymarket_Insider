@@ -102,12 +102,12 @@ class ConsensusWeights(BaseModel):
 
 
 class ConsensusConfig(BaseModel):
-    lookback_days: int = 1
+    lookback_days: int = 2
     min_wallets: int = 2
     require_tierA_or_B: bool = True
-    min_position_delta_usd: float = 1500
-    min_total_delta_usd: float = 5000
-    max_top_wallet_share: float = 0.8
+    min_position_delta_usd: float = 1000
+    min_total_delta_usd: float = 3000
+    max_top_wallet_share: float = 0.85
     top_n: int = 25
     weights: ConsensusWeights = ConsensusWeights()
 
