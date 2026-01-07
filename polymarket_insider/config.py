@@ -44,6 +44,29 @@ class DiversityConfig(BaseModel):
     mode: str = "cap"
 
 
+class WalletFilters(BaseModel):
+    min_total_usd: float = 5000
+    min_markets: int = 3
+    min_clusters: int = 2
+    max_top_cluster_share: float = 0.7
+    max_top_market_share: float = 0.5
+    max_hhi_clusters: float = 0.65
+    max_sidedness: float = 0.9
+
+
+class WalletRanking(BaseModel):
+    w_total_usd_log: float = 1.0
+    w_markets: float = 0.4
+    w_clusters: float = 0.8
+    w_diversity_bonus: float = 1.2
+    w_concentration_penalty: float = -1.0
+    w_sidedness_penalty: float = -0.4
+
+
+class ReportConfig(BaseModel):
+    top_wallets: int = 15
+
+
 class Weights(BaseModel):
     market: Dict[str, float]
     wallet: Dict[str, float]
@@ -55,6 +78,9 @@ class AppConfig(BaseModel):
     holders: HoldersConfig = HoldersConfig()
     thresholds: Thresholds = Thresholds()
     diversity: DiversityConfig = DiversityConfig()
+    wallet_filters: WalletFilters = WalletFilters()
+    wallet_ranking: WalletRanking = WalletRanking()
+    report: ReportConfig = ReportConfig()
     weights: Weights
 
 

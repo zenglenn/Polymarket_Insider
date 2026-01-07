@@ -25,6 +25,23 @@ diversity:
   max_per_cluster_top50: 10
   max_per_cluster_watchlist: 8
   mode: "cap"
+wallet_filters:
+  min_total_usd: 5000
+  min_markets: 3
+  min_clusters: 2
+  max_top_cluster_share: 0.70
+  max_top_market_share: 0.50
+  max_hhi_clusters: 0.65
+  max_sidedness: 0.90
+wallet_ranking:
+  w_total_usd_log: 1.0
+  w_markets: 0.4
+  w_clusters: 0.8
+  w_diversity_bonus: 1.2
+  w_concentration_penalty: -1.0
+  w_sidedness_penalty: -0.4
+report:
+  top_wallets: 15
 weights:
   market:
     volume: 0.25

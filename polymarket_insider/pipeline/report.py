@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from polymarket_insider.analytics import wallet_metrics as wallet_analytics
 from polymarket_insider.config import load_config
 from polymarket_insider.db import store
 from polymarket_insider.scoring.weights import stable_sorted
@@ -35,6 +36,26 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         """,
         (run_date.isoformat(),),
     ).fetchall()
+    wallet_metrics_rows = store.fetch_wallet_metrics(conn, run_date.isoformat())
+    ranked_wallets, excluded_wallets = wallet_analytics.score_wallet_metrics(
+        wallet_metrics_rows,
+        config,
+    )
+    top_wallets = ranked_wallets[: config.report.top_wallets]
+    top_excluded = excluded_wallets[: config.report.top_wallets]
+    top_wallet_addresses = [wallet.get("address") for wallet in top_wallets if wallet.get("address")]
+    wallet_positions_rows = wallet_analytics.wallet_positions(
+        conn,
+        run_date.isoformat(),
+        top_wallet_addresses,
+        top_n_positions=10,
+    )
+    cluster_summary_rows = wallet_analytics.clusters_summary(conn, run_date.isoformat())
+    top_wallet_cluster_map = wallet_analytics.wallet_top_clusters(
+        conn,
+        run_date.isoformat(),
+        [wallet.get("address") for wallet in ranked_wallets[:50]],
+    )
     conn.close()
 
     records = []
@@ -66,6 +87,10 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
     md_path = out_dir / f"report_{report_date}.md"
     csv_path = out_dir / f"report_{report_date}.csv"
     watchlist_path = out_dir / "watchlist.json"
+    wallets_ranked_path = out_dir / f"wallets_ranked_{report_date}.csv"
+    wallets_concentrated_path = out_dir / f"wallets_concentrated_{report_date}.csv"
+    wallets_positions_path = out_dir / f"wallet_positions_top_{report_date}.csv"
+    clusters_summary_path = out_dir / f"clusters_summary_{report_date}.csv"
 
     headers = [
         "market_id",
@@ -92,6 +117,77 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         writer.writeheader()
         writer.writerows(csv_rows)
 
+    wallets_ranked_headers = [
+        "rank",
+        "address",
+        "score_wallet",
+        "total_usd",
+        "markets_count",
+        "clusters_count",
+        "top_cluster_share",
+        "hhi_clusters",
+        "hhi_markets",
+        "top_market_share",
+        "yes_share",
+        "sidedness",
+    ]
+    with wallets_ranked_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=wallets_ranked_headers)
+        writer.writeheader()
+        for idx, wallet in enumerate(ranked_wallets, start=1):
+            row = {"rank": idx}
+            row.update({key: wallet.get(key) for key in wallets_ranked_headers if key != "rank"})
+            writer.writerow(row)
+
+    wallets_concentrated_headers = [
+        "address",
+        "total_usd",
+        "markets_count",
+        "clusters_count",
+        "top_cluster_share",
+        "reason",
+    ]
+    with wallets_concentrated_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=wallets_concentrated_headers)
+        writer.writeheader()
+        for wallet in excluded_wallets:
+            writer.writerow(
+                {
+                    "address": wallet.get("address"),
+                    "total_usd": wallet.get("total_usd"),
+                    "markets_count": wallet.get("markets_count"),
+                    "clusters_count": wallet.get("clusters_count"),
+                    "top_cluster_share": wallet.get("top_cluster_share"),
+                    "reason": wallet.get("reasons"),
+                }
+            )
+
+    wallet_positions_headers = [
+        "address",
+        "market_id",
+        "question",
+        "cluster_key",
+        "outcome",
+        "value_usd",
+    ]
+    with wallets_positions_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=wallet_positions_headers)
+        writer.writeheader()
+        writer.writerows(wallet_positions_rows)
+
+    cluster_summary_headers = [
+        "cluster_key",
+        "markets_in_cluster",
+        "total_holder_usd",
+        "wallets",
+        "top_wallet",
+        "top_wallet_usd",
+    ]
+    with clusters_summary_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=cluster_summary_headers)
+        writer.writeheader()
+        writer.writerows(cluster_summary_rows)
+
     diversified_top50 = apply_cluster_cap(
         records,
         limit=50,
@@ -115,6 +211,19 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         "Top50 cluster share max=%.3f top_clusters=%s",
         max_cluster_share,
         sorted(top50_cluster_counts.items(), key=lambda item: item[1], reverse=True)[:5],
+    )
+    wallet_cluster_counts = cluster_counts(
+        [{"cluster_key": cluster} for cluster in top_wallet_cluster_map.values()]
+    )
+    wallet_cluster_max_share = (
+        max(wallet_cluster_counts.values()) / len(top_wallet_cluster_map)
+        if top_wallet_cluster_map
+        else 0.0
+    )
+    logger.info(
+        "Top50 wallet cluster share max=%.3f top_clusters=%s",
+        wallet_cluster_max_share,
+        sorted(wallet_cluster_counts.items(), key=lambda item: item[1], reverse=True)[:5],
     )
 
     with md_path.open("w", encoding="utf-8") as handle:
@@ -148,6 +257,46 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         else:
             handle.write("- top_filter_reasons: none\n")
         handle.write("\n")
+        handle.write("## Wallet Summary\n\n")
+        handle.write(
+            "Signal candidates pass the wallet filters: minimum USD exposure, participation across multiple "
+            "markets and clusters, and concentration/sidedness caps. Rankings reward diversified exposure and "
+            "penalize single-cluster or single-market concentration.\n\n"
+        )
+        if top_wallets:
+            handle.write(
+                "| Rank | Address | Score | Total USD | Markets | Clusters | Top cluster share | "
+                "HHI clusters | HHI markets | Top market share | Yes share | Sidedness |\n"
+            )
+            handle.write("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
+            for idx, wallet in enumerate(top_wallets, start=1):
+                handle.write(
+                    f"| {idx} | {wallet.get('address')} | {_fmt(wallet.get('score_wallet'), 4)} "
+                    f"| {_fmt(wallet.get('total_usd'), 2)} | {wallet.get('markets_count')} "
+                    f"| {wallet.get('clusters_count')} | {_fmt(wallet.get('top_cluster_share'), 2)} "
+                    f"| {_fmt(wallet.get('hhi_clusters'), 2)} | {_fmt(wallet.get('hhi_markets'), 2)} "
+                    f"| {_fmt(wallet.get('top_market_share'), 2)} | {_fmt(wallet.get('yes_share'), 2)} "
+                    f"| {_fmt(wallet.get('sidedness'), 2)} |\n"
+                )
+        else:
+            handle.write("No wallets passed filters for this run.\n")
+        handle.write("\n")
+        if top_excluded:
+            handle.write("### Concentrated Event Traders (Excluded)\n\n")
+            handle.write("| Rank | Address | Total USD | Markets | Clusters | Top cluster share | Reason |\n")
+            handle.write("| --- | --- | --- | --- | --- | --- | --- |\n")
+            for idx, wallet in enumerate(top_excluded, start=1):
+                handle.write(
+                    f"| {idx} | {wallet.get('address')} | {_fmt(wallet.get('total_usd'), 2)} "
+                    f"| {wallet.get('markets_count')} | {wallet.get('clusters_count')} "
+                    f"| {_fmt(wallet.get('top_cluster_share'), 2)} | {wallet.get('reasons')} |\n"
+                )
+            handle.write("\n")
+        if wallet_cluster_counts:
+            handle.write("Top clusters in Top 50 wallets:\n")
+            for key, count in sorted(wallet_cluster_counts.items(), key=lambda item: item[1], reverse=True)[:10]:
+                handle.write(f"- {key}: {count}\n")
+            handle.write(f"- top50_wallets_max_cluster_share: {wallet_cluster_max_share:.3f}\n\n")
         if trades_derived_count > 0:
             handle.write(
                 f"WARNING: {trades_derived_count} holder rows derived from trades (no holders API).\n\n"
@@ -222,3 +371,12 @@ def cluster_counts(records: list[dict[str, Any]]) -> dict[str, int]:
         key = record.get("cluster_key") or "unknown"
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _fmt(value: Any, digits: int) -> str:
+    if value is None:
+        return "n/a"
+    try:
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return "n/a"

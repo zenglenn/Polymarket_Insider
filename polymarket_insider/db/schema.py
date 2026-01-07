@@ -67,6 +67,24 @@ CREATE TABLE IF NOT EXISTS wallet_scores (
     PRIMARY KEY (run_date, wallet)
 );
 
+CREATE TABLE IF NOT EXISTS wallet_metrics (
+    run_date TEXT NOT NULL,
+    address TEXT NOT NULL,
+    total_usd REAL,
+    markets_count INTEGER,
+    clusters_count INTEGER,
+    top_cluster_share REAL,
+    yes_usd REAL,
+    no_usd REAL,
+    yes_share REAL,
+    sidedness REAL,
+    top_market_share REAL,
+    hhi_markets REAL,
+    hhi_clusters REAL,
+    created_at TEXT,
+    PRIMARY KEY (run_date, address)
+);
+
 CREATE TABLE IF NOT EXISTS run_diagnostics (
     run_date TEXT PRIMARY KEY,
     diagnostics_json TEXT

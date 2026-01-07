@@ -5,17 +5,29 @@ Polymarket Insider is a local-first pipeline that pulls public Polymarket Gamma 
 ## Run
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e .
-python -m polymarket_insider.pipeline.run_daily
+python3 -m pip install -e .
+python3 -m polymarket_insider.pipeline.run_daily
 ```
 
-## Outputs
+## What To Look At After A Run
 
+- Report (human-readable): `out/report_YYYY-MM-DD.md`
+- Market ranking (CSV): `out/report_YYYY-MM-DD.csv`
+- Signal candidates: `out/wallets_ranked_YYYY-MM-DD.csv`
+- Concentrated event traders (excluded): `out/wallets_concentrated_YYYY-MM-DD.csv`
+- Top wallet positions: `out/wallet_positions_top_YYYY-MM-DD.csv`
+- Cluster summary: `out/clusters_summary_YYYY-MM-DD.csv`
+- Watchlist (JSON): `out/watchlist.json`
 - SQLite: `data/polymarket_insider.sqlite`
 - Raw API captures: `data/raw/YYYY-MM-DD/`
-- Reports: `out/report_YYYY-MM-DD.md`, `out/report_YYYY-MM-DD.csv`, `out/watchlist.json`
+
+Quick local inspection:
+
+```bash
+python3 -m polymarket_insider.tools.inspect_latest
+```
 
 ## Clusters and Diversification
 
@@ -34,3 +46,5 @@ Holders are fetched for the top N kept markets by volume/liquidity. Coverage is 
 
 - Uses public APIs only; data availability can be incomplete or delayed.
 - Scores are deterministic and heuristic; they do not imply insider certainty.
+- USD values come from API fields or price-implied estimates; missing prices leave value_usd null.
+- These outputs surface signal candidates and concentrated event traders, not attribution.

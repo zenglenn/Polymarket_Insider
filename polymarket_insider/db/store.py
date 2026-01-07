@@ -237,6 +237,45 @@ def insert_wallet_scores(
         conn.commit()
 
 
+def insert_wallet_metrics(
+    conn: sqlite3.Connection,
+    run_date: str,
+    metrics: Iterable[dict[str, Any]],
+    commit: bool = True,
+) -> None:
+    rows = []
+    for metric in metrics:
+        rows.append(
+            (
+                run_date,
+                metric.get("address"),
+                metric.get("total_usd"),
+                metric.get("markets_count"),
+                metric.get("clusters_count"),
+                metric.get("top_cluster_share"),
+                metric.get("yes_usd"),
+                metric.get("no_usd"),
+                metric.get("yes_share"),
+                metric.get("sidedness"),
+                metric.get("top_market_share"),
+                metric.get("hhi_markets"),
+                metric.get("hhi_clusters"),
+                metric.get("created_at"),
+            )
+        )
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO wallet_metrics
+        (run_date, address, total_usd, markets_count, clusters_count, top_cluster_share,
+         yes_usd, no_usd, yes_share, sidedness, top_market_share, hhi_markets, hhi_clusters, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    if commit:
+        conn.commit()
+
+
 def fetch_markets(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT market_id, question, slug, status, cluster_key, close_time, volume_usd, liquidity_usd, raw_json FROM markets"
@@ -315,6 +354,40 @@ def fetch_holders_for_run(conn: sqlite3.Connection, run_date: str) -> list[dict[
     return results
 
 
+def fetch_wallet_metrics(conn: sqlite3.Connection, run_date: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT run_date, address, total_usd, markets_count, clusters_count, top_cluster_share,
+               yes_usd, no_usd, yes_share, sidedness, top_market_share, hhi_markets, hhi_clusters,
+               created_at
+        FROM wallet_metrics
+        WHERE run_date = ?
+        """,
+        (run_date,),
+    ).fetchall()
+    results = []
+    for row in rows:
+        results.append(
+            {
+                "run_date": row["run_date"],
+                "address": row["address"],
+                "total_usd": row["total_usd"],
+                "markets_count": row["markets_count"],
+                "clusters_count": row["clusters_count"],
+                "top_cluster_share": row["top_cluster_share"],
+                "yes_usd": row["yes_usd"],
+                "no_usd": row["no_usd"],
+                "yes_share": row["yes_share"],
+                "sidedness": row["sidedness"],
+                "top_market_share": row["top_market_share"],
+                "hhi_markets": row["hhi_markets"],
+                "hhi_clusters": row["hhi_clusters"],
+                "created_at": row["created_at"],
+            }
+        )
+    return results
+
+
 def insert_run_diagnostics(
     conn: sqlite3.Connection,
     run_date: str,
@@ -343,5 +416,6 @@ def clear_run_data(conn: sqlite3.Connection, run_date: str) -> None:
     conn.execute("DELETE FROM holders WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM market_scores WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM wallet_scores WHERE run_date = ?", (run_date,))
+    conn.execute("DELETE FROM wallet_metrics WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM market_snapshots WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM run_diagnostics WHERE run_date = ?", (run_date,))

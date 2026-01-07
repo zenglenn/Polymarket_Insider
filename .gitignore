@@ -4,4 +4,6 @@ __pycache__/
 polymarket_insider.egg-info/
 data/
 out/
+*.sqlite
+*.gz
 .DS_Store
