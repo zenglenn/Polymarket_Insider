@@ -93,6 +93,25 @@ class Weights(BaseModel):
     wallet: Dict[str, float]
 
 
+class ConsensusWeights(BaseModel):
+    w_total_delta: float = 1.0
+    w_wallets: float = 2.0
+    w_new: float = 1.0
+    w_tierA: float = 1.5
+    w_concentration_penalty: float = 2.0
+
+
+class ConsensusConfig(BaseModel):
+    lookback_days: int = 1
+    min_wallets: int = 2
+    require_tierA_or_B: bool = True
+    min_position_delta_usd: float = 1500
+    min_total_delta_usd: float = 5000
+    max_top_wallet_share: float = 0.8
+    top_n: int = 25
+    weights: ConsensusWeights = ConsensusWeights()
+
+
 class AppConfig(BaseModel):
     run: RunConfig = RunConfig()
     market_filters: MarketFilters = MarketFilters()
@@ -103,6 +122,7 @@ class AppConfig(BaseModel):
     wallet_ranking: WalletRanking = WalletRanking()
     report: ReportConfig = ReportConfig()
     flow: FlowConfig = FlowConfig()
+    consensus: ConsensusConfig = ConsensusConfig()
     weights: Weights
 
 

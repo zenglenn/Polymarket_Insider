@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from polymarket_insider.analytics import consensus as consensus_analytics
 from polymarket_insider.analytics import flow as flow_analytics
 from polymarket_insider.analytics import wallet_metrics as wallet_analytics
 from polymarket_insider.config import load_config
@@ -58,6 +59,7 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         [wallet.get("address") for wallet in ranked_wallets[:50]],
     )
     flow_results = flow_analytics.compute_flow(conn, run_date.isoformat(), config)
+    consensus_results = consensus_analytics.compute_consensus(conn, run_date.isoformat(), config)
     conn.close()
 
     records = []
@@ -96,6 +98,8 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
     wallets_flow_path = out_dir / f"wallets_flow_{report_date}.csv"
     wallets_positions_flow_path = out_dir / f"wallet_positions_flow_{report_date}.csv"
     markets_flow_path = out_dir / f"markets_flow_{report_date}.csv"
+    consensus_flow_path = out_dir / f"consensus_flow_{report_date}.csv"
+    consensus_flow_wallets_path = out_dir / f"consensus_flow_wallets_{report_date}.csv"
 
     headers = [
         "market_id",
@@ -248,6 +252,46 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         writer = csv.DictWriter(handle, fieldnames=markets_flow_headers)
         writer.writeheader()
         writer.writerows(flow_results.get("markets_flow", []))
+
+    consensus_flow_headers = [
+        "rank",
+        "score_consensus",
+        "market_id",
+        "question",
+        "cluster_key",
+        "outcome",
+        "wallets_supporting",
+        "wallets_new",
+        "wallets_increasing",
+        "tiers_A",
+        "tiers_B",
+        "total_delta_usd",
+        "total_new_usd",
+        "total_increase_usd",
+        "top_wallet",
+        "top_wallet_delta",
+        "top_wallet_share",
+    ]
+    with consensus_flow_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=consensus_flow_headers)
+        writer.writeheader()
+        for idx, row in enumerate(consensus_results.get("consensus_entries", []), start=1):
+            payload = {key: row.get(key) for key in consensus_flow_headers if key not in {"rank"}}
+            payload["rank"] = idx
+            writer.writerow(payload)
+
+    consensus_wallet_headers = [
+        "market_id",
+        "outcome",
+        "address",
+        "tier",
+        "delta_usd",
+        "classification",
+    ]
+    with consensus_flow_wallets_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=consensus_wallet_headers)
+        writer.writeheader()
+        writer.writerows(consensus_results.get("consensus_wallets", []))
 
     diversified_top50 = apply_cluster_cap(
         records,
@@ -432,6 +476,32 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
             for key, count in sorted(wallet_cluster_counts.items(), key=lambda item: item[1], reverse=True)[:10]:
                 handle.write(f"- {key}: {count}\n")
             handle.write(f"- top50_wallets_max_cluster_share: {wallet_cluster_max_share:.3f}\n\n")
+
+        handle.write("## Consensus Flow\n\n")
+        prior_run = consensus_results.get("prior_run_date") or "none"
+        handle.write(
+            f"- prior_run_date: {prior_run}\n"
+            f"- lookback_days: {consensus_results.get('lookback_days')}\n\n"
+        )
+        consensus_top = consensus_results.get("consensus_entries", [])[:10]
+        handle.write(
+            "Consensus Flow highlights markets/outcomes seeing independent NEW/INCREASE from multiple "
+            "Tier A/B wallets.\n\n"
+        )
+        if consensus_top:
+            handle.write(
+                "| Rank | Market | Outcome | Wallets | Total Delta USD | Top Wallet Share |\n"
+            )
+            handle.write("| --- | --- | --- | --- | --- | --- |\n")
+            for idx, row in enumerate(consensus_top, start=1):
+                handle.write(
+                    f"| {idx} | {row.get('question')} | {row.get('outcome')} "
+                    f"| {row.get('wallets_supporting')} | {_fmt(row.get('total_delta_usd'), 2)} "
+                    f"| {_fmt(row.get('top_wallet_share'), 2)} |\n"
+                )
+        else:
+            handle.write("No consensus flow entries met thresholds.\n")
+        handle.write("\n")
         if trades_derived_count > 0:
             handle.write(
                 f"WARNING: {trades_derived_count} holder rows derived from trades (no holders API).\n\n"

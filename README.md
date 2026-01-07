@@ -22,6 +22,8 @@ python3 -m polymarket_insider.pipeline.run_daily
 - Flow wallets: `out/wallets_flow_YYYY-MM-DD.csv`
 - Flow positions: `out/wallet_positions_flow_YYYY-MM-DD.csv`
 - Market flow summary: `out/markets_flow_YYYY-MM-DD.csv`
+- Consensus flow: `out/consensus_flow_YYYY-MM-DD.csv`
+- Consensus wallet contributions: `out/consensus_flow_wallets_YYYY-MM-DD.csv`
 - Watchlist (JSON): `out/watchlist.json`
 - SQLite: `data/polymarket_insider.sqlite`
 - Raw API captures: `data/raw/YYYY-MM-DD/`
@@ -32,6 +34,7 @@ Quick local inspection:
 python3 -m polymarket_insider.tools.inspect_latest
 python3 -m polymarket_insider.tools.inspect_flow
 python3 -m polymarket_insider.tools.daily_quickview
+python3 -m polymarket_insider.tools.consensus_quickview
 ```
 
 ## Clusters and Diversification

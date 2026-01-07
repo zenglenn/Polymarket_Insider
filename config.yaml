@@ -70,3 +70,17 @@ weights:
     conviction: 0.2
     whale: 0.2
     new_wallet: 0.1
+consensus:
+  lookback_days: 1
+  min_wallets: 2
+  require_tierA_or_B: true
+  min_position_delta_usd: 1500
+  min_total_delta_usd: 5000
+  max_top_wallet_share: 0.80
+  top_n: 25
+  weights:
+    w_total_delta: 1.0
+    w_wallets: 2.0
+    w_new: 1.0
+    w_tierA: 1.5
+    w_concentration_penalty: 2.0
