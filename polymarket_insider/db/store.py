@@ -276,6 +276,37 @@ def insert_wallet_metrics(
         conn.commit()
 
 
+def insert_wallet_market_daily(
+    conn: sqlite3.Connection,
+    run_date: str,
+    rows: Iterable[dict[str, Any]],
+    commit: bool = True,
+) -> None:
+    payload = []
+    for row in rows:
+        payload.append(
+            (
+                run_date,
+                row.get("address"),
+                row.get("market_id"),
+                row.get("cluster_key"),
+                row.get("outcome"),
+                row.get("value_usd"),
+                row.get("created_at"),
+            )
+        )
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO wallet_market_daily
+        (run_date, address, market_id, cluster_key, outcome, value_usd, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        payload,
+    )
+    if commit:
+        conn.commit()
+
+
 def fetch_markets(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT market_id, question, slug, status, cluster_key, close_time, volume_usd, liquidity_usd, raw_json FROM markets"
@@ -417,5 +448,6 @@ def clear_run_data(conn: sqlite3.Connection, run_date: str) -> None:
     conn.execute("DELETE FROM market_scores WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM wallet_scores WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM wallet_metrics WHERE run_date = ?", (run_date,))
+    conn.execute("DELETE FROM wallet_market_daily WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM market_snapshots WHERE run_date = ?", (run_date,))
     conn.execute("DELETE FROM run_diagnostics WHERE run_date = ?", (run_date,))

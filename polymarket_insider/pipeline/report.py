@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from polymarket_insider.analytics import flow as flow_analytics
 from polymarket_insider.analytics import wallet_metrics as wallet_analytics
 from polymarket_insider.config import load_config
 from polymarket_insider.db import store
@@ -56,6 +57,7 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         run_date.isoformat(),
         [wallet.get("address") for wallet in ranked_wallets[:50]],
     )
+    flow_results = flow_analytics.compute_flow(conn, run_date.isoformat(), config)
     conn.close()
 
     records = []
@@ -91,6 +93,9 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
     wallets_concentrated_path = out_dir / f"wallets_concentrated_{report_date}.csv"
     wallets_positions_path = out_dir / f"wallet_positions_top_{report_date}.csv"
     clusters_summary_path = out_dir / f"clusters_summary_{report_date}.csv"
+    wallets_flow_path = out_dir / f"wallets_flow_{report_date}.csv"
+    wallets_positions_flow_path = out_dir / f"wallet_positions_flow_{report_date}.csv"
+    markets_flow_path = out_dir / f"markets_flow_{report_date}.csv"
 
     headers = [
         "market_id",
@@ -187,6 +192,61 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
         writer = csv.DictWriter(handle, fieldnames=cluster_summary_headers)
         writer.writeheader()
         writer.writerows(cluster_summary_rows)
+
+    wallets_flow_headers = [
+        "address",
+        "score_flow",
+        "total_usd_today",
+        "total_usd_prev",
+        "total_usd_delta",
+        "markets_today",
+        "markets_prev",
+        "markets_delta",
+        "clusters_today",
+        "clusters_prev",
+        "clusters_delta",
+        "top_cluster_today",
+        "top_cluster_share_today",
+        "top_cluster_delta",
+        "top_cluster_delta_usd",
+        "new_clusters_entered_count",
+    ]
+    with wallets_flow_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=wallets_flow_headers)
+        writer.writeheader()
+        for row in flow_results.get("wallets_flow", []):
+            writer.writerow({key: row.get(key) for key in wallets_flow_headers})
+
+    wallets_positions_flow_headers = [
+        "address",
+        "market_id",
+        "question",
+        "cluster_key",
+        "outcome",
+        "usd_today",
+        "usd_prev",
+        "delta_usd",
+        "classification",
+    ]
+    with wallets_positions_flow_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=wallets_positions_flow_headers)
+        writer.writeheader()
+        writer.writerows(flow_results.get("positions_flow", []))
+
+    markets_flow_headers = [
+        "market_id",
+        "question",
+        "cluster_key",
+        "wallets_increasing",
+        "wallets_new",
+        "total_delta_usd",
+        "top_wallet",
+        "top_wallet_delta",
+    ]
+    with markets_flow_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=markets_flow_headers)
+        writer.writeheader()
+        writer.writerows(flow_results.get("markets_flow", []))
 
     diversified_top50 = apply_cluster_cap(
         records,
@@ -291,6 +351,43 @@ def write_report(run_date: date, db_path: Path, out_dir: Path) -> None:
                     f"| {wallet.get('markets_count')} | {wallet.get('clusters_count')} "
                     f"| {_fmt(wallet.get('top_cluster_share'), 2)} | {wallet.get('reasons')} |\n"
                 )
+            handle.write("\n")
+        handle.write("## Flow (Since Prior Run)\n\n")
+        prior_run = flow_results.get("prior_run_date")
+        if not prior_run:
+            handle.write("No prior run available to compute flow deltas.\n\n")
+        else:
+            handle.write(f"- prior_run_date: {prior_run}\n\n")
+            top_flow_wallets = flow_results.get("wallets_flow", [])[:15]
+            top_flow_markets = flow_results.get("markets_flow", [])[:15]
+            handle.write(
+                "Flow wallets are signal candidates whose total exposure increased and stayed diversified across "
+                "clusters. Position flow highlights new or increasing positions above thresholds.\n\n"
+            )
+            if top_flow_wallets:
+                handle.write(
+                    "| Rank | Address | Score | Total USD Delta | New Clusters | Top Cluster Delta USD |\n"
+                )
+                handle.write("| --- | --- | --- | --- | --- | --- |\n")
+                for idx, wallet in enumerate(top_flow_wallets, start=1):
+                    handle.write(
+                        f"| {idx} | {wallet.get('address')} | {_fmt(wallet.get('score_flow'), 4)} "
+                        f"| {_fmt(wallet.get('total_usd_delta'), 2)} | {wallet.get('new_clusters_entered_count')} "
+                        f"| {_fmt(wallet.get('top_cluster_delta_usd'), 2)} |\n"
+                    )
+            else:
+                handle.write("No flow wallets met the thresholds.\n")
+            handle.write("\n")
+            if top_flow_markets:
+                handle.write("| Rank | Market | Total Delta USD | Wallets Increasing | Wallets New |\n")
+                handle.write("| --- | --- | --- | --- | --- |\n")
+                for idx, market in enumerate(top_flow_markets, start=1):
+                    handle.write(
+                        f"| {idx} | {market.get('question')} | {_fmt(market.get('total_delta_usd'), 2)} "
+                        f"| {market.get('wallets_increasing')} | {market.get('wallets_new')} |\n"
+                    )
+            else:
+                handle.write("No market flow met the thresholds.\n")
             handle.write("\n")
         if wallet_cluster_counts:
             handle.write("Top clusters in Top 50 wallets:\n")

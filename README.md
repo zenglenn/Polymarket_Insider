@@ -19,6 +19,9 @@ python3 -m polymarket_insider.pipeline.run_daily
 - Concentrated event traders (excluded): `out/wallets_concentrated_YYYY-MM-DD.csv`
 - Top wallet positions: `out/wallet_positions_top_YYYY-MM-DD.csv`
 - Cluster summary: `out/clusters_summary_YYYY-MM-DD.csv`
+- Flow wallets: `out/wallets_flow_YYYY-MM-DD.csv`
+- Flow positions: `out/wallet_positions_flow_YYYY-MM-DD.csv`
+- Market flow summary: `out/markets_flow_YYYY-MM-DD.csv`
 - Watchlist (JSON): `out/watchlist.json`
 - SQLite: `data/polymarket_insider.sqlite`
 - Raw API captures: `data/raw/YYYY-MM-DD/`
@@ -27,6 +30,7 @@ Quick local inspection:
 
 ```bash
 python3 -m polymarket_insider.tools.inspect_latest
+python3 -m polymarket_insider.tools.inspect_flow
 ```
 
 ## Clusters and Diversification

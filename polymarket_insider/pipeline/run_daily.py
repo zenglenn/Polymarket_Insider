@@ -5,6 +5,7 @@ from pathlib import Path
 
 from dateutil import parser as date_parser
 
+from polymarket_insider.analytics import flow as flow_analytics
 from polymarket_insider.analytics.wallet_metrics import compute_wallet_metrics
 from polymarket_insider.config import load_config
 from polymarket_insider.db import store
@@ -49,11 +50,16 @@ def main() -> None:
         wallet_metrics = compute_wallet_metrics(conn, run_date.isoformat())
         store.insert_wallet_metrics(conn, run_date.isoformat(), wallet_metrics, commit=False)
 
+        logger.info("Building wallet market daily snapshots")
+        wallet_market_daily = flow_analytics.build_wallet_market_daily(conn, run_date.isoformat())
+        store.insert_wallet_market_daily(conn, run_date.isoformat(), wallet_market_daily, commit=False)
+
         diagnostics.update(
             {
                 "scored_markets": scored_markets,
                 "scored_wallets": scored_wallets,
                 "wallet_metrics": len(wallet_metrics),
+                "wallet_market_daily": len(wallet_market_daily),
             }
         )
         store.insert_run_diagnostics(conn, run_date.isoformat(), diagnostics, commit=False)

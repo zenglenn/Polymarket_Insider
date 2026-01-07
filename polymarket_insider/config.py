@@ -67,6 +67,24 @@ class ReportConfig(BaseModel):
     top_wallets: int = 15
 
 
+class FlowWeights(BaseModel):
+    w_flow_delta: float = 1.0
+    w_new_clusters: float = 0.8
+    w_cluster_delta: float = 0.3
+    w_concentration_penalty: float = 1.2
+
+
+class FlowConfig(BaseModel):
+    min_total_usd_today: float = 5000
+    min_total_delta_usd: float = 2000
+    min_position_delta_usd: float = 1000
+    min_new_position_usd: float = 1500
+    max_top_cluster_share_today: float = 0.6
+    top_wallets: int = 25
+    top_positions_per_wallet: int = 10
+    weights: FlowWeights = FlowWeights()
+
+
 class Weights(BaseModel):
     market: Dict[str, float]
     wallet: Dict[str, float]
@@ -81,6 +99,7 @@ class AppConfig(BaseModel):
     wallet_filters: WalletFilters = WalletFilters()
     wallet_ranking: WalletRanking = WalletRanking()
     report: ReportConfig = ReportConfig()
+    flow: FlowConfig = FlowConfig()
     weights: Weights
 
 

@@ -42,6 +42,19 @@ wallet_ranking:
   w_sidedness_penalty: -0.4
 report:
   top_wallets: 15
+flow:
+  min_total_usd_today: 5000
+  min_total_delta_usd: 2000
+  min_position_delta_usd: 1000
+  min_new_position_usd: 1500
+  max_top_cluster_share_today: 0.60
+  top_wallets: 25
+  top_positions_per_wallet: 10
+  weights:
+    w_flow_delta: 1.0
+    w_new_clusters: 0.8
+    w_cluster_delta: 0.3
+    w_concentration_penalty: 1.2
 weights:
   market:
     volume: 0.25
