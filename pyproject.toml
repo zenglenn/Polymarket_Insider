@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polymarket_insider"
+version = "0.1.0"
+description = "Polymarket Insider MVP"
+requires-python = ">=3.10"
+dependencies = [
+  "requests",
+  "tenacity",
+  "pydantic",
+  "PyYAML",
+  "python-dateutil",
+  "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["polymarket_insider*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

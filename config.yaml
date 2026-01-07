@@ -1,0 +1,30 @@
+run:
+  max_markets: 200
+  date_override: null
+  timezone: "America/New_York"
+market_filters:
+  days_to_close: 90
+  min_volume: 10000
+  min_liquidity: 5000
+holders:
+  top_n: 50
+  max_markets_to_fetch: 25
+thresholds:
+  new_wallet_days: 14
+  conviction_exposure_usd: 2000
+  whale_exposure_usd: 20000
+  conviction_exposure_shares: 1000
+  whale_exposure_shares: 5000
+  convergence_min_wallets: 3
+weights:
+  market:
+    volume: 0.25
+    liquidity: 0.25
+    holders: 0.2
+    closing_soon: 0.2
+    concentration: 0.1
+  wallet:
+    exposure: 0.5
+    conviction: 0.2
+    whale: 0.2
+    new_wallet: 0.1

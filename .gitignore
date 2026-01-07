@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+polymarket_insider.egg-info/
+data/
+out/
+.DS_Store
