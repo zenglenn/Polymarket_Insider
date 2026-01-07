@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from pydantic import BaseModel
@@ -21,7 +21,11 @@ class MarketFilters(BaseModel):
 
 class HoldersConfig(BaseModel):
     top_n: int = 50
-    max_markets_to_fetch: int = 25
+    max_markets_to_fetch: int = 60
+    request_timeout_s: int = 15
+    retry_max: int = 3
+    backoff_seconds: List[int] = [1, 2, 4, 8]
+    max_backoff_budget_s: int = 60
 
 
 class Thresholds(BaseModel):
@@ -31,6 +35,13 @@ class Thresholds(BaseModel):
     conviction_exposure_shares: float = 1000
     whale_exposure_shares: float = 5000
     convergence_min_wallets: int = 3
+
+
+class DiversityConfig(BaseModel):
+    enabled: bool = True
+    max_per_cluster_top50: int = 10
+    max_per_cluster_watchlist: int = 8
+    mode: str = "cap"
 
 
 class Weights(BaseModel):
@@ -43,6 +54,7 @@ class AppConfig(BaseModel):
     market_filters: MarketFilters = MarketFilters()
     holders: HoldersConfig = HoldersConfig()
     thresholds: Thresholds = Thresholds()
+    diversity: DiversityConfig = DiversityConfig()
     weights: Weights
 
 

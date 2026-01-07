@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -34,7 +35,14 @@ def collect_data(
     response_dir = raw_dir / "responses"
     ensure_dir(error_dir)
     ensure_dir(response_dir)
-    data_api = DataApiClient(error_dir=error_dir, response_dir=response_dir)
+    data_api = DataApiClient(
+        error_dir=error_dir,
+        response_dir=response_dir,
+        timeout_s=config.holders.request_timeout_s,
+        retry_max=config.holders.retry_max,
+        backoff_seconds=config.holders.backoff_seconds,
+        max_backoff_budget_s=config.holders.max_backoff_budget_s,
+    )
 
     raw_markets = gamma.list_markets(config.run.max_markets)
     markets_path = raw_dir / "markets.json.gz"
@@ -150,6 +158,8 @@ def collect_data(
             "holder_markets_failed": holder_markets_failed,
             "markets_with_holders": holder_markets_succeeded,
             "unknown_outcome_rows": unknown_outcome_rows,
+            "holders_rate_limited_count": data_api.rate_limited_count,
+            "holders_retry_count": data_api.retry_count,
         }
     )
     return diagnostics
@@ -201,11 +211,13 @@ def normalize_market(market: dict[str, Any]) -> dict[str, Any]:
             status = "inactive"
         else:
             status = "active"
+    cluster_key = build_cluster_key(market)
     return {
         "market_id": str(market_id) if market_id is not None else "unknown",
         "question": market.get("question") or market.get("title"),
         "slug": market.get("slug"),
         "status": status,
+        "cluster_key": cluster_key,
         "close_time": close_time,
         "volume_usd": volume_usd,
         "liquidity_usd": liquidity_usd,
@@ -463,6 +475,55 @@ def _coerce_list(value: Any) -> list[Any]:
         if isinstance(parsed, list):
             return parsed
     return []
+
+
+def build_cluster_key(market: dict[str, Any]) -> str:
+    raw = market
+    events = raw.get("events")
+    if isinstance(events, list):
+        for event in events:
+            if isinstance(event, dict):
+                event_id = event.get("id") or event.get("eventId") or event.get("event_id")
+                if event_id:
+                    return f"event:{event_id}"
+            elif isinstance(event, str):
+                return f"event:{event}"
+
+    group_title = raw.get("groupItemTitle") or raw.get("group_item_title")
+    if group_title:
+        return f"group:{normalize_cluster_text(group_title)}"
+
+    slug = raw.get("slug")
+    if isinstance(slug, str) and slug:
+        date_match = re.search(r"-\\d{4}-\\d{2}-\\d{2}", slug)
+        if date_match:
+            prefix = slug[: date_match.start()]
+        elif "--" in slug:
+            prefix = slug.split("--")[0]
+        else:
+            prefix = slug
+        return f"slug:{normalize_cluster_text(prefix)}"
+
+    question = raw.get("question") or raw.get("title") or ""
+    return f"q:{question_cluster_key(question)}"
+
+
+def normalize_cluster_text(text: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", " ", text.lower()).strip()
+    return re.sub(r"\\s+", " ", cleaned)
+
+
+def question_cluster_key(question: str) -> str:
+    q = question.strip().lower()
+    if q.startswith("will ") and " win super bowl 2026" in q:
+        return "super_bowl_2026_winner"
+    if "nfc championship" in q:
+        return "nfc_championship"
+    if "afc championship" in q:
+        return "afc_championship"
+    if "gta vi" in q or "gta 6" in q:
+        return "gta_6"
+    return normalize_cluster_text(q)[:60] or "unknown"
 
 
 def normalize_holder(

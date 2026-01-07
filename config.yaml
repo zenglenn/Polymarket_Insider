@@ -8,7 +8,11 @@ market_filters:
   min_liquidity: 5000
 holders:
   top_n: 50
-  max_markets_to_fetch: 25
+  max_markets_to_fetch: 60
+  request_timeout_s: 15
+  retry_max: 3
+  backoff_seconds: [1, 2, 4, 8]
+  max_backoff_budget_s: 60
 thresholds:
   new_wallet_days: 14
   conviction_exposure_usd: 2000
@@ -16,6 +20,11 @@ thresholds:
   conviction_exposure_shares: 1000
   whale_exposure_shares: 5000
   convergence_min_wallets: 3
+diversity:
+  enabled: true
+  max_per_cluster_top50: 10
+  max_per_cluster_watchlist: 8
+  mode: "cap"
 weights:
   market:
     volume: 0.25

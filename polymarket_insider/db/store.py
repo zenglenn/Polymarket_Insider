@@ -19,6 +19,7 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
     _ensure_column(conn, "markets", "status", "TEXT")
+    _ensure_column(conn, "markets", "cluster_key", "TEXT")
     _ensure_column(conn, "holders", "source", "TEXT")
     _ensure_column(conn, "holders", "address", "TEXT")
     _ensure_column(conn, "holders", "outcome", "TEXT")
@@ -28,6 +29,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "runs", "status", "TEXT")
     _ensure_column(conn, "runs", "finished_at", "TEXT")
     _ensure_column(conn, "runs", "error_message", "TEXT")
+    _ensure_column(conn, "market_snapshots", "cluster_key", "TEXT")
     conn.commit()
 
 
@@ -87,6 +89,7 @@ def upsert_markets(
                 market.get("question"),
                 market.get("slug"),
                 market.get("status"),
+                market.get("cluster_key"),
                 market.get("close_time"),
                 market.get("volume_usd"),
                 market.get("liquidity_usd"),
@@ -97,8 +100,8 @@ def upsert_markets(
     conn.executemany(
         """
         INSERT OR REPLACE INTO markets
-        (market_id, question, slug, status, close_time, volume_usd, liquidity_usd, raw_json, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (market_id, question, slug, status, cluster_key, close_time, volume_usd, liquidity_usd, raw_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
@@ -121,6 +124,7 @@ def insert_market_snapshots(
                 market.get("question"),
                 market.get("slug"),
                 market.get("status"),
+                market.get("cluster_key"),
                 market.get("close_time"),
                 market.get("volume_usd"),
                 market.get("liquidity_usd"),
@@ -130,8 +134,8 @@ def insert_market_snapshots(
     conn.executemany(
         """
         INSERT OR REPLACE INTO market_snapshots
-        (run_date, market_id, question, slug, status, close_time, volume_usd, liquidity_usd, raw_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (run_date, market_id, question, slug, status, cluster_key, close_time, volume_usd, liquidity_usd, raw_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )
@@ -235,7 +239,7 @@ def insert_wallet_scores(
 
 def fetch_markets(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
-        "SELECT market_id, question, slug, status, close_time, volume_usd, liquidity_usd, raw_json FROM markets"
+        "SELECT market_id, question, slug, status, cluster_key, close_time, volume_usd, liquidity_usd, raw_json FROM markets"
     ).fetchall()
     results = []
     for row in rows:
@@ -245,6 +249,7 @@ def fetch_markets(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 "question": row["question"],
                 "slug": row["slug"],
                 "status": row["status"],
+                "cluster_key": row["cluster_key"],
                 "close_time": row["close_time"],
                 "volume_usd": row["volume_usd"],
                 "liquidity_usd": row["liquidity_usd"],
@@ -257,7 +262,7 @@ def fetch_markets(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 def fetch_market_snapshots(conn: sqlite3.Connection, run_date: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT market_id, question, slug, status, close_time, volume_usd, liquidity_usd, raw_json
+        SELECT market_id, question, slug, status, cluster_key, close_time, volume_usd, liquidity_usd, raw_json
         FROM market_snapshots WHERE run_date = ?
         """,
         (run_date,),
@@ -270,6 +275,7 @@ def fetch_market_snapshots(conn: sqlite3.Connection, run_date: str) -> list[dict
                 "question": row["question"],
                 "slug": row["slug"],
                 "status": row["status"],
+                "cluster_key": row["cluster_key"],
                 "close_time": row["close_time"],
                 "volume_usd": row["volume_usd"],
                 "liquidity_usd": row["liquidity_usd"],

@@ -1,42 +1,63 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import requests
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 BASE_URL = "https://data-api.polymarket.com"
-TIMEOUT = (5, 20)
-
-
-def _should_retry(exc: Exception) -> bool:
-    if isinstance(exc, requests.HTTPError):
-        if exc.response is None:
-            return True
-        status = exc.response.status_code
-        return status >= 500 or status == 429
-    return True
 
 
 class DataApiClient:
-    def __init__(self, error_dir: Path | None = None, response_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        error_dir: Path | None = None,
+        response_dir: Path | None = None,
+        timeout_s: int = 15,
+        retry_max: int = 3,
+        backoff_seconds: Iterable[int] | None = None,
+        max_backoff_budget_s: int = 60,
+    ) -> None:
         self.session = requests.Session()
         self.error_dir = error_dir
         self.response_dir = response_dir
+        self.timeout = (timeout_s, timeout_s)
+        self.retry_max = retry_max
+        self.backoff_seconds = list(backoff_seconds) if backoff_seconds is not None else [1, 2, 4, 8]
+        self.max_backoff_budget_s = max_backoff_budget_s
+        self.remaining_backoff_budget_s = max_backoff_budget_s
+        self.retry_count = 0
+        self.rate_limited_count = 0
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential_jitter(initial=1, max=10),
-        retry=retry_if_exception(_should_retry),
-        reraise=True,
-    )
     def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         url = f"{BASE_URL}{path}"
-        response = self.session.get(url, params=params, timeout=TIMEOUT)
-        response.raise_for_status()
-        return response.json()
+        last_exc: Exception | None = None
+        for attempt in range(self.retry_max + 1):
+            try:
+                response = self.session.get(url, params=params, timeout=self.timeout)
+                response.raise_for_status()
+                return response.json()
+            except requests.HTTPError as exc:
+                last_exc = exc
+                status = exc.response.status_code if exc.response is not None else None
+                if status == 429:
+                    self.rate_limited_count += 1
+                if status is None or status >= 500 or status == 429:
+                    if attempt >= self.retry_max:
+                        raise
+                    self._sleep_backoff(attempt)
+                    continue
+                raise
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                last_exc = exc
+                if attempt >= self.retry_max:
+                    raise
+                self._sleep_backoff(attempt)
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("Data API request failed without exception")
 
     def get_holders(self, market_id: str, limit: int) -> list[dict[str, Any]]:
         params = {"limit": limit}
@@ -76,6 +97,18 @@ class DataApiClient:
                 raise
         payload = self._get_json("/trades", params={"market_id": market_id, **params})
         return self._extract_list(payload)
+
+    def _sleep_backoff(self, attempt: int) -> None:
+        if not self.backoff_seconds:
+            return
+        delay = self.backoff_seconds[min(attempt, len(self.backoff_seconds) - 1)]
+        if delay <= 0:
+            return
+        if self.remaining_backoff_budget_s < delay:
+            return
+        self.retry_count += 1
+        self.remaining_backoff_budget_s -= delay
+        time.sleep(delay)
 
     def _save_error(
         self,
@@ -145,3 +178,22 @@ class DataApiClient:
                 if isinstance(value, list):
                     return [item for item in value if isinstance(item, dict)]
         return []
+
+
+def compute_backoff_schedule(
+    backoff_seconds: Iterable[int],
+    retry_max: int,
+    max_budget_s: int,
+) -> list[int]:
+    schedule: list[int] = []
+    remaining = max_budget_s
+    backoffs = list(backoff_seconds)
+    for attempt in range(retry_max):
+        if not backoffs:
+            break
+        delay = backoffs[min(attempt, len(backoffs) - 1)]
+        if delay <= 0 or remaining < delay:
+            break
+        schedule.append(delay)
+        remaining -= delay
+    return schedule

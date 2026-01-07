@@ -72,12 +72,14 @@ def main() -> None:
     finally:
         logger.info(
             "Run summary fetched=%s kept=%s holders_targeted=%s holders_succeeded=%s holders_failed=%s "
-            "scored_markets=%s scored_wallets=%s outputs=%s",
+            "holders_rate_limited=%s holders_retries=%s scored_markets=%s scored_wallets=%s outputs=%s",
             diagnostics.get("markets_fetched", 0),
             diagnostics.get("markets_kept", 0),
             diagnostics.get("holder_markets_targeted", 0),
             diagnostics.get("holder_markets_succeeded", 0),
             diagnostics.get("holder_markets_failed", 0),
+            diagnostics.get("holders_rate_limited_count", 0),
+            diagnostics.get("holders_retry_count", 0),
             diagnostics.get("scored_markets", 0),
             diagnostics.get("scored_wallets", 0),
             out_dir,

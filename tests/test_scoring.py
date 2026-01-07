@@ -1,6 +1,8 @@
 import pytest
 
-from polymarket_insider.pipeline.collect import extract_holder_outcome, extract_holder_value_usd
+from polymarket_insider.api.data_api import compute_backoff_schedule
+from polymarket_insider.pipeline.collect import build_cluster_key, extract_holder_outcome, extract_holder_value_usd
+from polymarket_insider.pipeline.report import apply_cluster_cap
 from polymarket_insider.scoring.features import hhi_concentration
 from polymarket_insider.scoring.weights import stable_sorted
 
@@ -50,3 +52,33 @@ def test_outcome_mapping_from_index():
     holder = {"outcomeIndex": 1}
     market = {"raw": {"outcomes": ["Yes", "No"]}}
     assert extract_holder_outcome(holder, market) == "No"
+
+
+def test_cluster_key_deterministic():
+    market = {
+        "question": "Will the Tigers win Super Bowl 2026?",
+        "slug": "nfl-super-bowl-2026",
+        "events": [{"id": "evt_123"}],
+    }
+    assert build_cluster_key(market) == "event:evt_123"
+
+
+def test_diversification_cap():
+    records = [
+        {"cluster_key": "a", "score": 3},
+        {"cluster_key": "a", "score": 2},
+        {"cluster_key": "a", "score": 1},
+        {"cluster_key": "b", "score": 3},
+        {"cluster_key": "b", "score": 2},
+        {"cluster_key": "c", "score": 1},
+    ]
+    selected = apply_cluster_cap(records, limit=5, max_per_cluster=2, enabled=True)
+    counts = {}
+    for record in selected:
+        counts[record["cluster_key"]] = counts.get(record["cluster_key"], 0) + 1
+    assert max(counts.values()) <= 2
+
+
+def test_backoff_schedule_budget():
+    schedule = compute_backoff_schedule([1, 2, 4, 8], retry_max=4, max_budget_s=5)
+    assert sum(schedule) <= 5
