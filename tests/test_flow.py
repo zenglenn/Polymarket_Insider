@@ -83,7 +83,7 @@ def test_flow_deltas_and_classification() -> None:
         flow=FlowConfig(
             min_runs_seen=2,
             lookback_runs=5,
-            override_total_usd_today_for_new_wallet=25000,
+            override_total_usd_today_for_new_wallet=15000,
             min_total_usd_today=5000,
             min_total_delta_usd=2000,
             min_position_delta_usd=1000,
@@ -137,9 +137,8 @@ def test_flow_min_runs_seen_and_tiers() -> None:
 
     # Wallet Z: present in both runs, tier C.
     _insert_holder(conn, prev_date, "m1", "Z", "Yes", 8000.0)
-    _insert_holder(conn, today_date, "m1", "Z", "Yes", 8000.0)
-    _insert_holder(conn, today_date, "m3", "Z", "No", 4000.0)
-    _insert_holder(conn, today_date, "m4", "Z", "Yes", 4000.0)
+    _insert_holder(conn, today_date, "m1", "Z", "Yes", 7000.0)
+    _insert_holder(conn, today_date, "m3", "Z", "No", 5000.0)
 
     _build_metrics(conn, prev_date)
     _build_metrics(conn, today_date)
@@ -149,12 +148,12 @@ def test_flow_min_runs_seen_and_tiers() -> None:
         flow=FlowConfig(
             min_runs_seen=2,
             lookback_runs=5,
-            override_total_usd_today_for_new_wallet=25000,
+            override_total_usd_today_for_new_wallet=15000,
             min_total_usd_today=5000,
-            min_total_delta_usd=5000,
-            min_position_delta_usd=2000,
-            min_new_position_usd=2500,
-            max_top_cluster_share_today=0.5,
+            min_total_delta_usd=2500,
+            min_position_delta_usd=1000,
+            min_new_position_usd=1500,
+            max_top_cluster_share_today=0.6,
             top_wallets=10,
             top_positions_per_wallet=10,
             weights=FlowWeights(),
@@ -192,12 +191,12 @@ def test_flow_ordering_ties() -> None:
         flow=FlowConfig(
             min_runs_seen=2,
             lookback_runs=5,
-            override_total_usd_today_for_new_wallet=25000,
+            override_total_usd_today_for_new_wallet=15000,
             min_total_usd_today=5000,
-            min_total_delta_usd=5000,
-            min_position_delta_usd=2000,
-            min_new_position_usd=2500,
-            max_top_cluster_share_today=0.5,
+            min_total_delta_usd=2500,
+            min_position_delta_usd=1000,
+            min_new_position_usd=1500,
+            max_top_cluster_share_today=0.6,
             top_wallets=10,
             top_positions_per_wallet=10,
             weights=FlowWeights(),

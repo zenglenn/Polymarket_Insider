@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
+import logging
 from typing import Any, Iterable
 
 from polymarket_insider.scoring.weights import stable_sorted
@@ -40,6 +41,7 @@ def build_wallet_market_daily(conn, run_date: str) -> list[dict[str, Any]]:
 
 
 def compute_flow(conn, run_date: str, config) -> dict[str, Any]:
+    logger = logging.getLogger(__name__)
     prior_run_date = _prior_run_date(conn, run_date)
     if not prior_run_date:
         return {
@@ -57,6 +59,7 @@ def compute_flow(conn, run_date: str, config) -> dict[str, Any]:
     cluster_prev = _cluster_totals(conn, prior_run_date)
 
     wallets_flow: list[dict[str, Any]] = []
+    filter_counts: dict[str, int] = {}
     for address, today in wallet_today.items():
         prev = wallet_prev.get(address, {})
         total_today = today.get("total_usd") or 0.0
@@ -94,7 +97,10 @@ def compute_flow(conn, run_date: str, config) -> dict[str, Any]:
             "runs_seen": runs_seen_count,
         }
 
-        if not _flow_wallet_passes(flow_row, config.flow):
+        failure_reasons = _flow_wallet_failure_reasons(flow_row, config.flow)
+        if failure_reasons:
+            for reason in failure_reasons:
+                filter_counts[reason] = filter_counts.get(reason, 0) + 1
             continue
 
         flow_row["score_flow"] = _flow_score(flow_row, config.flow)
@@ -107,6 +113,9 @@ def compute_flow(conn, run_date: str, config) -> dict[str, Any]:
         reverse=True,
         tie_breaker=lambda item: item.get("address"),
     )
+
+    if not wallets_flow:
+        logger.info("Flow filter counts: %s", sorted(filter_counts.items()))
 
     top_wallets = wallets_flow[: config.flow.top_wallets]
     positions_flow = _positions_flow(
@@ -227,20 +236,21 @@ def _new_clusters_entered(today: dict[str, float], prev: dict[str, float]) -> in
     return count
 
 
-def _flow_wallet_passes(metric: dict[str, Any], flow) -> bool:
+def _flow_wallet_failure_reasons(metric: dict[str, Any], flow) -> list[str]:
+    reasons: list[str] = []
     total_today = metric.get("total_usd_today") or 0.0
     total_delta = metric.get("total_usd_delta") or 0.0
     top_cluster_share = metric.get("top_cluster_share_today")
     runs_seen = metric.get("runs_seen") or 0
     if total_today < flow.min_total_usd_today:
-        return False
+        reasons.append("min_total_usd_today")
     if total_delta < flow.min_total_delta_usd:
-        return False
+        reasons.append("min_total_delta_usd")
     if top_cluster_share is None or top_cluster_share > flow.max_top_cluster_share_today:
-        return False
+        reasons.append("max_top_cluster_share_today")
     if runs_seen < flow.min_runs_seen and total_today < flow.override_total_usd_today_for_new_wallet:
-        return False
-    return True
+        reasons.append("min_runs_seen")
+    return reasons
 
 
 def _flow_score(metric: dict[str, Any], flow) -> float:
@@ -268,9 +278,9 @@ def _flow_tier(metric: dict[str, Any]) -> str:
     top_cluster_share = metric.get("top_cluster_share_today")
     if top_cluster_share is None:
         return "TIER_C"
-    if total_delta >= 20000 and new_clusters >= 3 and top_cluster_share <= 0.45:
+    if total_delta >= 15000 and new_clusters >= 3 and top_cluster_share <= 0.55:
         return "TIER_A"
-    if total_delta >= 10000 and new_clusters >= 2 and top_cluster_share <= 0.50:
+    if total_delta >= 8000 and new_clusters >= 2 and top_cluster_share <= 0.60:
         return "TIER_B"
     return "TIER_C"
 
